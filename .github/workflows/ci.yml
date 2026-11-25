@@ -1,0 +1,34 @@
+# CI: check the Lola module on every pull request.
+#
+# .github/scripts/check_module.py checks that agents, commands and skills
+# have the frontmatter Lola needs, that all frontmatter parses, and that
+# relative Markdown links resolve. "Check module" is a required check on
+# main (safe-settings in zero-dot-force/.github), so nothing merges, by hand
+# or by gh-hud's auto-merge, until it passes.
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check module
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check module/
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 .github/scripts/check_module.py module
