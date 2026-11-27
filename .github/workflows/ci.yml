@@ -2,9 +2,10 @@
 #
 # .github/scripts/check_module.py checks that agents, commands and skills
 # have the frontmatter Lola needs, that all frontmatter parses, and that
-# relative Markdown links resolve. "Check module" is a required check on
-# main (safe-settings in zero-dot-force/.github), so nothing merges, by hand
-# or by gh-hud's auto-merge, until it passes.
+# relative Markdown links resolve. Dewey learnings PRs and gh-hud toolkit
+# rollouts skip it (jflowers/ship's pr-scope.yml). "CI OK" is the required
+# check on main (safe-settings in zero-dot-force/.github), so nothing
+# merges, by hand or by gh-hud's auto-merge, until it passes.
 name: CI
 
 on:
@@ -20,8 +21,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides whether Check module must run: Dewey learnings PRs and gh-hud
+  # toolkit rollouts skip it; everything else runs it.
+  scope:
+    uses: jflowers/ship/.github/workflows/pr-scope.yml@3b0ce8bf47183be402df9eaec16644c213eee5f7 # main, after v0.11.0
+    permissions:
+      contents: read
+
   check:
     name: Check module
+    needs: scope
+    if: needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -32,3 +42,30 @@ jobs:
         run: |
           python3 -m pip install --quiet pyyaml
           python3 .github/scripts/check_module.py module
+
+  # Required check. Passes only when scope succeeded and Check module ran
+  # and passed (code PRs) or was skipped (chore PRs). A failed scope job
+  # would otherwise skip Check module, and a skipped job counts as passing.
+  ci-ok:
+    name: CI OK
+    needs: [scope, check]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check needed jobs
+        env:
+          SCOPE: ${{ needs.scope.result }}
+          CODE: ${{ needs.scope.outputs.code }}
+          CHECK: ${{ needs.check.result }}
+        run: |
+          echo "scope=$SCOPE code=$CODE check=$CHECK"
+          [ "$SCOPE" = success ] || { echo "::error::scope: $SCOPE"; exit 1; }
+          case "$CODE" in
+            true) want=success ;;
+            false) want=skipped ;;
+            *) echo "::error::scope code '$CODE'"; exit 1 ;;
+          esac
+          [ "$CHECK" = "$want" ] || { echo "::error::Check module: $CHECK, want $want"; exit 1; }
+          echo "CI passed."
